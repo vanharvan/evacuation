@@ -2,117 +2,119 @@
 <model version="NetLogo 7.0.2" snapToGrid="true">
   <code><![CDATA[extensions [ gis ]
 
-globals [
-  road-dataset sea-dataset land-dataset urban-dataset exit-dataset
-  road-patches sea-patches land-patches urban-patches exit-patches
-  
-  meter
-  
-  
-  seconds-per-tick
-  meters-per-patch
-  water-level
-  rise-speed
+extensions [
+  gis
 ]
 
-breed [ pedestrians pedestrian ]
-breed [ cars car ]
+globals [
+  land-dataset land-patches
+  water-dataset
+  building-dataset building-patches
+  road-dataset road-patches
+  meters-per-patch
+  seconds-per-tick
+
+]
+
+patches-own [
+  is-water?
+  is-land?
+  is-building?
+  is-road?
+  move-preference
+]
 
 turtles-own [
-  speed               ;; patches / tick 
-  status              ;; "evacuating", "safe", "dead"
-  distance-traveled   
-  preparation-time    ;; time delay (td)
+  speed
+  evacuated?
 ]
 
-to setup
-  __clear-all-and-reset-ticks
-  ;; 800 x 600 patches
-  ;;equals to 8000 m x 600 meters
-  ;; 1 patch = 10 x 10 meters
+to setup-world
+  clear-all
   
-  set seconds-per-tick 30               ;; set 1 tick = 30 seconds
-  let scale 10                          ;; 1 patch = 10 x 10 m
-                                        ;; 1 grid = 100 x 100 patches -> 1 km x 1 km
-
+  set meters-per-patch 10
+  set seconds-per-tick 1
+  ;;set-patch-preferences
+  
   load-spatial
-  draw-grid
-  load-population
-  reset-ticks
+  reset-ticks  
 end
-
-to setup-population
-  let scale 10 ;; 1 patch = 10 x 10 meter
-
-  let num-pedestrians round (total-population * (pedestrian-ratio / 100))
-  let num-cars (total-population - num-pedestrians)
-  
-  create-pedestrians num-pedestrians [
-    set shape "person"
-    set color white
-    set size 15
-    set status "evacuating"
-    set speed (1.33 * 30) / scale ;; 1.33 m/s * 30 ticks -> people move about 40
-    
-    ifelse any? urban-patches
-    [ move-to one-of urban-patches ]
-    [ move-to one-of patches with [pcolor != blue] ]
-  ]
-  
-  create-cars num-cars [
-    set shape "car"
-    set color magenta
-    set size 20
-    set status "evacuating"
-    set speed (5.0 * 30) / scale
-    
-    ifelse any? urban-patches
-    [ move-to one-of urban-patches ]
-    [ move-to one-of patches with [pcolor != blue] ]    
-    
-  ]  
-end
-  
-  
 
 to load-spatial
-  let scale 10 ;; 1 patch = 10 x 10 meter
-  let x ((8000 / scale) - 1)
-  let y (-1) * ((6000 / scale) - 1)
-  resize-world 0 x y 0
-  set-patch-size 1.5
-  
   gis:load-coordinate-system "projection.prj"
-  
   set land-dataset gis:load-dataset "land.shp"
-  set sea-dataset gis:load-dataset "water.shp"
+  set water-dataset gis:load-dataset "water.shp"
+  set building-dataset gis:load-dataset "building.shp"
   set road-dataset gis:load-dataset "road_network.shp"
-  gis:set-world-envelope gis:envelope-of land-dataset
+  gis:set-world-envelope (gis:envelope-union-of (gis:envelope-of land-dataset)
+                                                (gis:envelope-of water-dataset))
   
+  ;gis:set-drawing-color brown
+  ;gis:fill land-dataset 1.0
   set land-patches patches gis:intersecting land-dataset
-  set sea-patches patches gis:intersecting sea-dataset
+  ask land-patches [ set pcolor brown ]
+  print (word "Success: " count land-patches " land patches have been loaded.")
+  ask land-patches [
+    set is-land? true
+    set is-water? false
+  ]
+
+  gis:set-drawing-color blue
+  gis:fill water-dataset 1.0
+  
   set road-patches patches gis:intersecting road-dataset
+  ask road-patches [ set pcolor white ]
+  print (word "Success: " count road-patches " road patches have been loaded.")
+  ;gis:set-drawing-color white - 2
+  ;gis:draw road-dataset 2
   
-  ask land-patches [ set pcolor green - 3 ]
-  ask sea-patches [ set pcolor blue ]
+  gis:set-drawing-color green - 2
+  gis:fill building-dataset 1.0 
+
+  ;draw-grid
+end
+
+;; --- BUTTON 2: LOAD POPULATION ---
+to load-population
+  ;; Clear existing people so they don't stack if you click twice
+  ask turtles [ die ]
   
-  gis:set-drawing-color gray
-  gis:draw road-dataset 1
-  ask road-patches [ set pcolor gray + 2 ]
+  ;; Reference the 'population-size' variable from your Input Box
+  let habitable-patches patches with [is-water? = false]
+  
+  ifelse any? habitable-patches [
+    ask n-of population-size habitable-patches [
+      sprout 1 [
+        set shape "person"
+        set size 10
+        set color yellow
+        set evacuated? false
+        set speed 0.1 
+      ]
+    ]
+  ] [
+    user-message "Error: No land found! Run 'setup-world' first."
+  ]
+end
+
+to set-patch-preferences
+  ask patches [
+    if is-water?    [ set move-preference -999 ]
+    if is-land?     [ set move-preference 50   ]
+    if is-building? [ set move-preference 10   ] ;; pass-through allowed but slow
+    if is-road?     [ set move-preference 100  ] ;; highly preferred
+  ]
 end
 
 to draw-grid
   ;; Overlay the 1km grid
   ask patches [
     if (pxcor mod 100 = 0) or (pycor mod 100 = 0) [
-      set pcolor white
+      set pcolor black
     ]
   ]
 end
 
-to load-population
-  
-end
   
   
   ]]></code>
